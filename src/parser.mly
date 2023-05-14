@@ -68,7 +68,12 @@
 %token EOF
 
 %start <Tree.expr option> term
+%start <Tree.poly option> pretype
 %%
+
+let pretype :=
+  | EOF; { None }
+  | expr = type_entry; EOF; { Some expr }
 
 let term :=
   | EOF; { None }

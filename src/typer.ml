@@ -1,7 +1,6 @@
 open Tree
 
 let ( let* ) = Result.bind
-let ( >>= ) = Result.bind
 
 type errors =
   | RecursiveTypes
@@ -330,11 +329,14 @@ let rec infer ~ctx level pretype =
             variables := var :: !variables ;
             Ok var
         | Some annot ->
-            let* vars, anno = instantiate_annotation (Level.next level) ([], annot) in
+            let* vars, anno =
+              instantiate_annotation (Level.next level) ([], annot)
+            in
             variables := vars @ !variables ;
             Ok anno
       in
-      context_ref := Context.extend_name ~name:param ~poly:param_type !context_ref ;
+      context_ref
+        := Context.extend_name ~name:param ~poly:param_type !context_ref ;
       let* infer_return = infer ~ctx:!context_ref (Level.next level) body in
       let* insta_return =
         match is_annotated body, infer_return with
@@ -342,7 +344,11 @@ let rec infer ~ctx level pretype =
         | false, _ -> instantiate (Level.next level) infer_return
       in
       match List.for_all is_monomorphic !variables with
-      | true -> Ok (generalize level (Ptyp_arrow { param = param_type; return = insta_return }))
+      | true ->
+          Ok
+            (generalize
+               level
+               (Ptyp_arrow { param = param_type; return = insta_return }))
       | false -> Error ExpectMonotype)
 
 and infer_args ~ctx level param_ty arg_expr =

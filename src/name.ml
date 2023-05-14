@@ -1,5 +1,4 @@
-type name = string [@@deriving show]
-type t = name [@@deriving show]
+type t = string [@@deriving show]
 
 let make t = t
 let repr t = t
