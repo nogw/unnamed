@@ -1,0 +1,9 @@
+(library
+ (name smol) 
+ (libraries menhirLib)
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.eq sedlex.ppx)))
+
+(menhir
+ (modules parser)
+ (flags --dump --explain))
