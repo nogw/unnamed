@@ -1,4 +1,5 @@
-type t = string [@@deriving show]
+type name = string [@@deriving show]
+and t = name
 
 val make : string -> t
 val repr : t -> string

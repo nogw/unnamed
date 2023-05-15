@@ -1,5 +1,6 @@
 open Tree
 open Name
+open Typer
 open Format
 
 let sequence sep pp vs ppf = 
@@ -11,24 +12,24 @@ let rec pp_expr fmt expr =
   | Pexp_annot { value; annot } ->
       fprintf fmt "(%a : %a)" pp_expr value pp_type annot
   | Pexp_lower { value } ->
-      fprintf fmt "%s" (repr value)
+      fprintf fmt "%a" pp_name value
   | Pexp_let { name; bind; body } ->
-      fprintf fmt "let %s = %a; %a" (repr name) pp_expr bind pp_expr body
+      fprintf fmt "let %a = %a; %a" pp_name name pp_expr bind pp_expr body
   | Pexp_lambda { param; annot = None; body } ->
-      fprintf fmt "lambda %s => %a" (repr param) pp_expr body
+      fprintf fmt "lambda %a => %a" pp_name param pp_expr body
   | Pexp_lambda { param; annot = Some annot; body } ->
-      fprintf fmt "lambda (%s : %a) => %a" (repr param) pp_type annot pp_expr body
+      fprintf fmt "lambda (%a : %a) => %a" pp_name param pp_type annot pp_expr body
   | Pexp_apply { lambda; argm } ->
       fprintf fmt "%a(%a)" pp_expr lambda pp_expr argm
 
 and pp_type fmt ty =
   match ty with
-  | Ptyp_var name  -> 
-      fprintf fmt "%a" pp_var name 
+  | Ptyp_var { name }  -> 
+      fprintf fmt "%a" pp_name name
   | Ptyp_const { name } ->
-      fprintf fmt "%s" (repr name) 
+      fprintf fmt "%a" pp_name name 
   | Ptyp_forall { param; return } ->
-      fprintf fmt "(forall %t => %a)" (sequence ", " pp_id param) pp_type return
+      fprintf fmt "(forall %t => %a)" (sequence ", " pp_name param) pp_type return
   | Ptyp_arrow { param = Ptyp_arrow _ as param; return } ->
       fprintf fmt "(%a) -> %a" pp_type param pp_type return
   | Ptyp_arrow { param; return } ->
@@ -36,13 +37,45 @@ and pp_type fmt ty =
   | Ptyp_apply { base; argm } ->
       fprintf fmt "%a %a" pp_type base pp_type argm
 
+(* Typer Tree *)
+
+let rec pp_ttype fmt ty =
+  match ty with
+  | TTree.TVar name  -> 
+      fprintf fmt "%a" pp_var name
+  | TTree.TCon name ->
+      fprintf fmt "%a" pp_name name 
+  | TTree.TForall (param, return) ->
+      fprintf fmt "(forall %t => %a)" (sequence ", " pp_print_int param) pp_ttype return
+  | TTree.TArrow (TTree.TArrow _ as param, return) ->
+      fprintf fmt "(%a) -> %a" pp_ttype param pp_ttype return
+  | TTree.TArrow (param, return) ->
+      fprintf fmt "%a -> %a" pp_ttype param pp_ttype return
+  | TTree.TApply (base, argm) ->
+      fprintf fmt "%a %a" pp_ttype base pp_ttype argm
+
 and pp_var fmt var =
   match !var with
-  | Unbound (name, _) ->   
+  | TTree.Unbound (name, _) ->   
       fprintf fmt "%d" name
-  | Link link ->
-      fprintf fmt "%a" pp_type link
-  | Generic name ->
+  | TTree.Link link ->
+      fprintf fmt "%a" pp_ttype link
+  | TTree.Generic name ->
       fprintf fmt "%d" name
-  | Bound name ->
+  | TTree.Bound name ->
       fprintf fmt "%d" name
+
+let rec pp_texpr fmt expr =
+  match expr with
+  | TTree.EAnnot (value, annot) ->
+      fprintf fmt "(%a : %a)" pp_texpr value pp_ttype annot
+  | TTree.ELower value ->
+      fprintf fmt "%a" pp_name value
+  | TTree.ELet (name, bind, body) ->
+      fprintf fmt "let %a = %a; %a" pp_name name pp_texpr bind pp_texpr body
+  | TTree.ELambda (param, None, body) ->
+      fprintf fmt "lambda %a => %a" pp_name param pp_texpr body
+  | TTree.ELambda (param, Some annot, body) ->
+      fprintf fmt "lambda (%a : %a) => %a" pp_name param pp_ttype annot pp_texpr body
+  | TTree.EApply (lambda, argm) ->
+      fprintf fmt "%a(%a)" pp_texpr lambda pp_texpr argm

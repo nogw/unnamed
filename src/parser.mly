@@ -10,43 +10,6 @@
     List.fold_left (fun lambda argm -> 
       Pexp_apply { lambda; argm }
     ) lambda args
-
-  let replace_type_constants_with_variables variables pretype =
-    let name_map = Hashtbl.create 12 in
-    let vars_ref = ref [] in
-    List.iter (fun var_name -> Hashtbl.replace name_map var_name None) variables ;
-    let rec f = function
-      | Ptyp_const { name } as ty -> (
-          try
-            match Hashtbl.find name_map name with
-            | Some var -> var
-            | None ->
-                let var_id, var = Typer.Skolem.make_bound () in
-                vars_ref := var_id :: !vars_ref ;
-                Hashtbl.replace name_map name (Some var) ;
-                var
-          with
-          | Not_found -> ty)
-      | Ptyp_var _ as ty -> ty
-      | Ptyp_apply { base; argm } ->
-          let base = f base in
-          let argm = f argm in
-          Ptyp_apply { base; argm }
-      | Ptyp_arrow { param; return } ->
-          let param = f param in
-          let return = f return in
-          Ptyp_arrow { param; return }
-      | Ptyp_forall { param; return } ->
-          let return = f return in
-          Ptyp_forall { param; return }
-    in
-    List.rev !vars_ref, f pretype
-
-  let handle_forall params body =
-    let (variables, pretype) = replace_type_constants_with_variables params body in
-    match variables with
-    | [] -> pretype
-    | xs -> Ptyp_forall { param = xs; return = pretype }
 %} 
 
 %token <string> LOWER
@@ -125,22 +88,34 @@ let type_simple :=
   | type_variable
   | type_parens
 
-let type_variable ==
+(* type variable *)
+let type_variable :=
   | value = LOWER; { Ptyp_const { name = Name.make value } }
-let type_arrow ==
+(* type arrow *)
+let type_arrow :=
   | param = type_simple; ARROW; return = type_entry; { Ptyp_arrow { param; return } }
-let type_forall ==
-  | FORALL; params = braces(non_empty_list(COMMA, LOWER)); FATARROW; return = type_entry; { handle_forall params return }
-let type_parens ==
+(* forall type *)
+let type_forall :=
+  | FORALL; param = braces (name_list (COMMA)); FATARROW; return = type_entry; { Ptyp_forall { param; return } }
+(* type enclosed in parentheses *)
+let type_parens :=
   | LEFT_PARENS; value = type_entry; RIGHT_PARENS; { value } 
 
-let non_empty_list(sep, expr) :=
+(* non-empty list of expressions separated by a separator *)
+let non_empty_list (sep, expr) :=
   | init = expr; { [init] }
-  | init = expr; sep; rest = separated_nonempty_list(sep, expr); { init :: rest }
+  | init = expr; sep; rest = separated_nonempty_list (sep, expr); { init :: rest }
+(* list of names separated by a separator *)
+let name_list (sep) :=
+  | init = LOWER; { [Name.make init] }
+  | init = LOWER; sep; rest = name_list (sep); { (Name.make init) :: rest }
 
-let parens(content) :=
+(* parentheses around a content *)
+let parens (content) :=
   | LEFT_PARENS; expr = content; RIGHT_PARENS; { expr }
-let braces(content) :=
+(* braces around a content *)
+let braces (content) :=
   | LEFT_BRACES; expr = content; RIGHT_BRACES; { expr }
-let brackets(content) :=
+(* brackets around a content *)
+let brackets (content) :=
   | LEFT_BRACKET; expr = content; RIGHT_BRACKET; { expr }
