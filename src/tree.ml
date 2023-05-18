@@ -4,9 +4,10 @@ type poly =
   | Ptyp_forall of { param : name list; return : poly }
   | Ptyp_arrow of { param : poly; return : poly }
   | Ptyp_apply of { base : poly; argm : poly }
+  | Ptyp_tuple of { types : poly list }
   | Ptyp_const of { name : name }
   | Ptyp_var of { name : name }
-[@@deriving show, eq]
+[@@deriving show { with_path = false }]
 
 type expr =
   | Pexp_lower of { value : name }
@@ -14,4 +15,7 @@ type expr =
   | Pexp_apply of { lambda : expr; argm : expr }
   | Pexp_let of { name : name; bind : expr; body : expr }
   | Pexp_annot of { value : expr; annot : poly }
-[@@deriving show, eq]
+[@@deriving show { with_path = false }]
+
+type term = PTerm_bind of { name : name; annot : poly option; body : expr }
+[@@deriving show { with_path = false }]

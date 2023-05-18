@@ -1,1 +1,1 @@
-let () = Smol.run ()
+let () = Smol.Run.run ()

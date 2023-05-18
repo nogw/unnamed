@@ -1,5 +1,5 @@
 profile=janestreet
-margin=100
+margin=80
 max-indent=4
 cases-exp-indent=4
 type-decl=compact

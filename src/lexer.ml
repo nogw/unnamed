@@ -7,6 +7,7 @@ let alphabet = [%sedlex.regexp? 'a' .. 'z' | 'A' .. 'Z']
 let digit = [%sedlex.regexp? '0' .. '9']
 let number = [%sedlex.regexp? Plus digit]
 let lower = [%sedlex.regexp? 'a' .. 'z', Star (alphabet | digit | '_')]
+let upper = [%sedlex.regexp? 'A' .. 'Z', Star (alphabet | digit | '_')]
 
 let rec tokenizer buf =
   match%sedlex buf with
@@ -16,6 +17,7 @@ let rec tokenizer buf =
   | "lambda" -> LAMBDA
   | "let" -> LET
   | lower -> LOWER (lexeme buf)
+  | upper -> UPPER (lexeme buf)
   | "=>" -> FATARROW
   | "->" -> ARROW
   | "=" -> EQUAL
