@@ -1,5 +1,3 @@
-(?) = see later
-
 ```rust
 // nice
 val flip : forall <a, b, c> . (a -> b -> c) -> b -> a -> c
