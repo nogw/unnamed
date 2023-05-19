@@ -92,10 +92,8 @@ let test_type { received; expected } =
   let process_type ty =
     Skolem.Fresh.reset ();
     let core = Core.initial_env in
-    let () = Format.printf "(%s)\n" ty in
     let ty = Lexer.from_string Parser.type_opt ty in
     let ty = Option.get ty in
-    let () = Format.printf "(%a)\n" Printer.pp_type ty in
     let ty = Transl.transl_wrapper core ty in
     Show.of_type (snd ty)
   in
