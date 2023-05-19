@@ -16,6 +16,7 @@ let rec tokenizer buf =
   | "forall" -> FORALL
   | "lambda" -> LAMBDA
   | "let" -> LET
+  | number -> NUMBER (int_of_string (lexeme buf))
   | lower -> LOWER (lexeme buf)
   | upper -> UPPER (lexeme buf)
   | "=>" -> FATARROW
@@ -24,6 +25,8 @@ let rec tokenizer buf =
   | ":" -> COLON
   | ";" -> SEMICOLON
   | "," -> COMMA
+  | "*" -> STAR
+  | "_" -> WILDCARD
   | "{" -> LEFT_BRACKET
   | "}" -> RIGHT_BRACKET
   | "[" -> LEFT_BRACES

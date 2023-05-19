@@ -1,7 +1,8 @@
+(* TODO: move most modules to separate files *)
+
 module PTree = Tree
 
 module TTree = struct
-  (* TODO: move to file *)
   type id = int [@@deriving show]
   type name = Name.t [@@deriving show]
   type prim = PInt | PUnit [@@deriving show { with_path = false }]
@@ -23,10 +24,18 @@ module TTree = struct
     | TForall of id list * poly
   [@@deriving show { with_path = false }]
 
+  type literal = LUnit | LNumber of int
+  [@@deriving show { with_path = false }]
+
+  type patt = PWild | PVar of name | PAnnot of patt * poly
+  [@@deriving show { with_path = false }]
+
   type expr =
+    | ELiteral of literal
     | ELower of name
     | ELet of name * expr * expr
-    | ELambda of name * poly option * expr
+    | ETuple of expr list
+    | ELambda of patt * expr
     | EApply of expr * expr
     | EAnnot of expr * poly
   [@@deriving show { with_path = false }]
@@ -38,7 +47,7 @@ module TTree = struct
     match pretype with
     | TVar ({ contents = Link link } as var) ->
         let con = repr link in
-        var := Link con ;
+        var := Link con;
         con
     | _ -> pretype
 end
@@ -56,7 +65,7 @@ module Param = struct
     | _ -> string_of_int div ^ String.make 1 char
 
   let next () =
-    incr counter ;
+    incr counter;
     from_int !counter
 
   let reset () = counter := 0
@@ -70,10 +79,15 @@ module Show = struct
   type context = string Vars.t
 
   let extend_vars context variables =
-    let extend (names, context) id =
-      let name = Param.from_int (Vars.cardinal context) in
+    let generate_name context =
+      let count = Vars.cardinal context in
+      Param.from_int count
+    in
+    let extend_context context names id =
+      let name = generate_name context in
       name :: names, Vars.add id name context
     in
+    let extend (names, context) id = extend_context context names id in
     let names, context = List.fold_left extend ([], context) variables in
     List.rev names, context
 
@@ -95,7 +109,7 @@ module Show = struct
         | None -> "?" ^ string_of_int id)
     | TTree.TTuple types ->
         let types_str = List.map (string_of_type vars) types in
-        sprintf "(%s)" (String.concat ", " types_str)
+        sprintf "(%s)" (String.concat " * " types_str)
     | TTree.TArrow (param, return) -> (
         let param_str = string_of_type vars param in
         let return_str = string_of_type vars return in
@@ -110,7 +124,7 @@ module Show = struct
         let param_names, vars = extend_vars vars param in
         let param_str = String.concat " " param_names in
         let return_str = string_of_type vars return in
-        sprintf "forall [%s] => %s" param_str return_str
+        sprintf "forall {%s} => %s" param_str return_str
 
   let of_type pretype =
     let context = Vars.empty in
@@ -127,7 +141,7 @@ module Skolem = struct
 
     let next () =
       let id = !current in
-      current := succ id ;
+      current := succ id;
       id
 
     let reset () = current := 0
@@ -171,9 +185,9 @@ module Environment = struct
   module SMap = Map.Make (String)
 
   type t = {
-    id : TTree.poly IMap.t; (* id variable *)
-    alias : TTree.poly SMap.t; (* alias type *)
-    infer : TTree.poly SMap.t; (* infer type *)
+    id : TTree.poly IMap.t (* id variable *);
+    alias : TTree.poly SMap.t (* alias type *);
+    infer : TTree.poly SMap.t (* infer type *);
   }
 
   let empty = { id = IMap.empty; alias = SMap.empty; infer = SMap.empty }
@@ -208,7 +222,7 @@ module Core = struct
       Environment.extend_alias ~name prim env
     in
     empty_env
-    |> load_prim ~name:"()" TTree.PUnit
+    |> load_prim ~name:"Unit" TTree.PUnit
     |> load_prim ~name:"Int" TTree.PInt
 end
 
@@ -226,7 +240,7 @@ module Transl = struct
     let from_variables ?(init = 16) variables =
       let context = create ~init in
       let addNone name = extend ~name None context in
-      List.iter addNone variables ;
+      List.iter addNone variables;
       context
   end
 
@@ -287,8 +301,26 @@ module Transl = struct
         | [], return -> return
         | xs, return -> TTree.TForall (xs, return))
 
+  and transl_patt ~env patt =
+    match patt with
+    | PTree.Ppat_wild -> TTree.PWild
+    | PTree.Ppat_var { name } -> TTree.PVar name
+    | PTree.Ppat_annot { value; annot } ->
+        let value = transl_patt ~env value in
+        let _, annot = transl_wrapper env annot in
+        TTree.PAnnot (value, annot)
+
+  (* TODO: useless? use parseTree? *)
+  and transl_literal lit =
+    match lit with
+    | PTree.Plit_unit -> TTree.LUnit
+    | PTree.Plit_number { value } -> TTree.LNumber value
+
   and transl_expr ~env expr =
     match expr with
+    | PTree.Pexp_literal { value } ->
+        let value = transl_literal value in
+        TTree.ELiteral value
     | PTree.Pexp_lower { value } -> TTree.ELower value
     | PTree.Pexp_annot { value; annot } ->
         let value = transl_expr ~env value in
@@ -298,17 +330,18 @@ module Transl = struct
         let bind = transl_expr ~env bind in
         let body = transl_expr ~env body in
         TTree.ELet (name, bind, body)
+    | PTree.Pexp_tuple { values } ->
+        let f expr = transl_expr ~env expr in
+        let values = List.map f values in
+        TTree.ETuple values
     | PTree.Pexp_apply { lambda; argm } ->
         let lambda = transl_expr ~env lambda in
         let argm = transl_expr ~env argm in
         TTree.EApply (lambda, argm)
-    | PTree.Pexp_lambda { param; annot = Some annot; body } ->
-        let _, annot = transl_wrapper env annot in
+    | PTree.Pexp_lambda { param; body } ->
+        let param = transl_patt ~env param in
         let body = transl_expr ~env body in
-        TTree.ELambda (param, Some annot, body)
-    | PTree.Pexp_lambda { param; annot = None; body } ->
-        let body = transl_expr ~env body in
-        TTree.ELambda (param, None, body)
+        TTree.ELambda (param, body)
 
   and transl_term ~env term =
     match term with
@@ -342,10 +375,10 @@ module Occurs = struct
     | TTree.TVar { contents = Link link } -> free_variables link
     | TTree.TTuple types -> List.iter free_variables types
     | TTree.TArrow (param, return) ->
-        free_variables param ;
+        free_variables param;
         free_variables return
     | TTree.TApply (base, argm) ->
-        free_variables base ;
+        free_variables base;
         free_variables argm
     | TTree.TForall (_, return) -> free_variables return
 
@@ -420,11 +453,6 @@ let rec is_monomorphic pretype =
       base && argm
 
 let occurs_check_adjust_levels id level pretype =
-  Format.printf
-    "occurs check adjust (%d, %d, %s)\n"
-    id
-    level
-    (TTree.show_poly pretype) ;
   let rec check_var var =
     match var.contents with
     | TTree.Link ty -> apply ty
@@ -441,16 +469,15 @@ let occurs_check_adjust_levels id level pretype =
     | TTree.TTuple types -> List.iter apply types
     | TTree.TForall (_, return) -> apply return
     | TTree.TArrow (param, return) ->
-        apply param ;
+        apply param;
         apply return
     | TTree.TApply (base, argm) ->
-        apply base ;
+        apply base;
         apply argm
   in
   apply pretype
 
 let rec unify lhs rhs =
-  Format.printf "unify (%s, %s)\n" (TTree.show_poly lhs) (TTree.show_poly rhs) ;
   match lhs, rhs with
   | lhs, rhs when lhs == rhs -> ()
   | TTree.TPrim lhs, TTree.TPrim rhs when lhs = rhs -> ()
@@ -461,21 +488,13 @@ let rec unify lhs rhs =
       unify lhs rhs
   | TTree.TVar ({ contents = Unbound (id, lvl) } as var), ty
   | ty, TTree.TVar ({ contents = Unbound (id, lvl) } as var) ->
-      Format.printf
-        "unify tvar (%s, %s)\n"
-        (TTree.show_poly lhs)
-        (TTree.show_poly rhs) ;
-      occurs_check_adjust_levels id lvl ty ;
-      Format.printf
-        "unify tvar (%s, %s)\n"
-        (TTree.show_poly lhs)
-        (TTree.show_poly rhs) ;
+      occurs_check_adjust_levels id lvl ty;
       var := Link ty
   | TTree.TApply (l1, a1), TTree.TApply (l2, a2) ->
-      unify l1 l2 ;
+      unify l1 l2;
       unify a1 a2
   | TTree.TArrow (p1, r1), TTree.TArrow (p2, r2) ->
-      unify p1 p2 ;
+      unify p1 p2;
       unify r1 r2
   | TTree.TForall (p1, r1), TTree.TForall (p2, r2) ->
       let llen = List.length p1 in
@@ -484,7 +503,7 @@ let rec unify lhs rhs =
         let generics = Skolem.fresh_generics llen in
         let gen_lhs = Subst.subst p1 generics r1 in
         let gen_rhs = Subst.subst p2 generics r2 in
-        unify gen_lhs gen_rhs ;
+        unify gen_lhs gen_rhs;
         match Occurs.escape_check generics lhs rhs with
         | true -> raise (TError (CannotUnify (lhs, rhs)))
         | false -> ())
@@ -504,19 +523,11 @@ let instantiate level pretype =
   | ty -> ty
 
 let subsume level lhs rhs =
-  Format.printf "subsume (%s, %s)\n" (TTree.show_poly lhs) (TTree.show_poly rhs) ;
   let instantiated_rhs = instantiate level rhs in
-  Format.printf "instantiated_rhs (%s)\n" (TTree.show_poly instantiated_rhs) ;
   match TTree.repr lhs with
   | TTree.TForall (param, return) as forall -> (
-      Format.printf
-        "unify (%s, %s)\n"
-        (TTree.show_poly lhs)
-        (TTree.show_poly instantiated_rhs) ;
       let gen_params = Skolem.fresh_generics (List.length param) in
-      Format.printf "gen_return (%s)\n" (TTree.show_poly return) ;
       let gen_return = Subst.subst param gen_params return in
-      Format.printf "gen_return (%s)\n" (TTree.show_poly gen_return) ;
       let () = unify gen_return instantiated_rhs in
       match Occurs.escape_check gen_params forall rhs with
       | true -> raise (TError (CannotSubsume (forall, rhs)))
@@ -533,17 +544,17 @@ let generalize level pretype =
     | TTree.TVar { contents = Generic _ } -> assert false
     | TTree.TVar { contents = Bound _ } -> ()
     | TTree.TVar ({ contents = Unbound (id, lvl) } as var) when lvl > level -> (
-        var := Bound id ;
+        var := Bound id;
         match List.mem id !variables with
         | true -> ()
         | false -> variables := id :: !variables)
     | TTree.TVar { contents = Unbound _ } -> ()
     | TTree.TTuple types -> List.iter apply types
     | TTree.TApply (base, argm) ->
-        apply base ;
+        apply base;
         apply argm
     | TTree.TArrow (param, return) ->
-        apply param ;
+        apply param;
         apply return
     | TTree.TForall (_, return) -> apply return
   in
@@ -558,12 +569,36 @@ let destruct_lambda_type pretype =
   | TTree.TVar ({ contents = Unbound (_, level) } as tvar) ->
       let param = Skolem.make_var ~level in
       let return = Skolem.make_var ~level in
-      tvar := Link (TTree.TArrow (param, return)) ;
+      tvar := Link (TTree.TArrow (param, return));
       param, return
   | _ -> raise (TError (ExpectFunction pretype))
 
-let rec infer ~env level pretype =
-  match pretype with
+let infer_literal literal =
+  (* TODO: avoid constructors *)
+  match literal with
+  | TTree.LNumber _ -> TTree.TPrim TTree.PInt
+  | TTree.LUnit -> TTree.TPrim TTree.PUnit
+
+let rec infer_patt ~env level patt =
+  match patt with
+  | TTree.PWild ->
+      let var = Skolem.make_var ~level:(Level.next level) in
+      var, [ var ], env
+  | TTree.PVar name ->
+      let var = Skolem.make_var ~level:(Level.next level) in
+      let env = Environment.extend_infer ~name var env in
+      var, [ var ], env
+  | TTree.PAnnot (value, annot) ->
+      let vars, anno = instantiate_annot level ([], annot) in
+      let poly, vs, env = infer_patt ~env level value in
+      let () = subsume level anno poly in
+      anno, vs @ vars, env
+
+let rec infer ~env level expr =
+  match expr with
+  | TTree.ELiteral value ->
+      let value = infer_literal value in
+      value
   | TTree.ELower value -> (
       match Environment.lookup_infer ~name:value env with
       | Some pretype -> pretype
@@ -576,44 +611,29 @@ let rec infer ~env level pretype =
   | TTree.ELet (name, bind, body) ->
       let bind = infer ~env (Level.next level) bind in
       infer ~env:(Environment.extend_infer ~name bind env) level body
+  | TTree.ETuple values ->
+      (* TODO: function to infer many *)
+      let f expr = infer ~env level expr in
+      let values = List.map f values in
+      TTree.TTuple values
   | TTree.EApply (lambda, argm) ->
       let level = Level.next level in
       let infer_lambda = infer ~env level lambda in
       let insta_lambda = instantiate level infer_lambda in
-      Format.printf "[DEBUG] + LAMBDA: (%s)\n" (TTree.show_poly insta_lambda) ;
       let param, return = destruct_lambda_type insta_lambda in
       let () = infer_arg ~env level param argm in
       let return = instantiate level return in
       let return = generalize (Level.prev level) return in
-      Format.printf "[DEBUG] + RETURN: (%s)\n" (TTree.show_poly return) ;
       return
-  | TTree.ELambda (param, annot, body) -> (
-      let ctx = ref env in
-      let variables = ref [] in
-      let annot =
-        let param_ty =
-          match annot with
-          | None ->
-              let var = Skolem.make_var ~level:(Level.next level) in
-              variables := var :: !variables ;
-              var
-          | Some annot ->
-              let vars, anno =
-                instantiate_annot (Level.next level) ([], annot)
-              in
-              variables := vars @ !variables ;
-              anno
-        in
-        ctx := Environment.extend_infer ~name:param param_ty !ctx ;
-        param_ty
-      in
-      let infer_return = infer ~env:!ctx (Level.next level) body in
+  | TTree.ELambda (param, body) -> (
+      let annot, variables, env = infer_patt ~env level param in
+      let infer_return = infer ~env (Level.next level) body in
       let insta_return =
         match is_annotated body, infer_return with
         | true, _ -> infer_return
         | false, _ -> instantiate (Level.next level) infer_return
       in
-      match List.for_all is_monomorphic !variables with
+      match List.for_all is_monomorphic variables with
       | true -> generalize level (TTree.TArrow (annot, insta_return))
       | false -> raise (TError ExpectMonotype))
 
@@ -628,12 +648,10 @@ let infer_term ~env term =
   | TTree.TBind { name; annot = None; body } ->
       let level = Level.base in
       let body = infer ~env level body in
-      Format.printf "%s :- %s\n" name (Show.of_type body) ;
       Environment.extend_infer ~name body env
   | TTree.TBind { name; annot = Some annot; body } ->
       let level = Level.base in
       let _, annot = instantiate_annot level ([], annot) in
       let body = infer ~env level body in
       let () = subsume level annot body in
-      Format.printf "%s :- %s\n" name (Show.of_type annot) ;
       Environment.extend_infer ~name annot env

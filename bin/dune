@@ -1,4 +1,4 @@
 (executable
- (public_name smol)
+ (public_name earle)
  (name main)
- (libraries smol))
+ (libraries earle))

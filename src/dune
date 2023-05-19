@@ -1,5 +1,5 @@
 (library
- (name smol)
+ (name earle)
  (libraries menhirLib alcotest)
  (preprocess
   (pps ppx_deriving.show ppx_deriving.eq sedlex.ppx)))

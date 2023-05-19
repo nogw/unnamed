@@ -1,4 +1,6 @@
 _build
+src/run.ml
 src/kind.ml
 src/linear.ml
-src/run.ml
+src/transl.ml
+src/parser.conflicts

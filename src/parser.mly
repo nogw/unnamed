@@ -14,6 +14,7 @@
 
 %token <string> LOWER
 %token <string> UPPER
+%token <int> NUMBER
 %token FORALL
 %token LAMBDA
 %token LET
@@ -23,6 +24,8 @@
 %token COMMA
 %token SEMICOLON
 %token COLON
+%token STAR
+%token WILDCARD
 %token LEFT_BRACKET
 %token RIGHT_BRACKET
 %token LEFT_PARENS
@@ -62,94 +65,115 @@ let term_bind_annot :=
 let expr :=
   | expr_let
   | expr_lambda
-  | expr_apply
+  | expr_tuple
 
 let expr_let :=
   | LET; name = LOWER; EQUAL; bind = expr; SEMICOLON; body = expr; { Pexp_let { name = Name.make name; bind; body } }
 let expr_lambda :=
-  | LAMBDA; (param, annot) = expr_lambda_params; FATARROW; body = expr; { Pexp_lambda { param = Name.make param; annot; body } }
+  | LAMBDA; param = patt; FATARROW; body = expr; { Pexp_lambda { param; body } }
 
-let expr_lambda_params :=
-  | param = LOWER; { (param, None) }
-  | (param, annot) = parens(annotation(LOWER)); { (param, Some annot) }
+let expr_tuple :=
+  | expr = expr_apply; { expr }
+  | expr = expr_apply; COMMA; exprs = nonempty_expr_list; { Pexp_tuple { values = expr :: exprs } }
+
+let nonempty_expr_list :=
+  | head = expr_apply; { [head] }
+  | head = nonempty_expr_list; COMMA; tail = expr_apply; { head @ [tail] }
 
 let expr_apply :=
-  | expr_term
   | lambda = expr_apply; args = parens(non_empty_list(COMMA, expr_apply)); { curry_expr_apply lambda args }
+  | expr_term
 
 let expr_term :=
-  | expr_simple
   | expr_constraint
+  | expr_simple
 
 let expr_simple :=
   | expr_variable
+  | expr_literal
   | expr_parens
 
+let expr_literal :=
+  | value = lit_entry; { Pexp_literal { value } }
 let expr_variable :=
-  | value = LOWER; { Pexp_lower { value = Name.make value } }
+  | name = LOWER; { Pexp_lower { value = Name.make name } }
 let expr_constraint :=
-  | (value, annot) = parens(annotation(expr_term)); { Pexp_annot { value; annot } }
+  | LEFT_PARENS; (value, annot) = annotation(expr_term); RIGHT_PARENS; { Pexp_annot { value; annot } }
 let expr_parens :=
   | LEFT_PARENS; expr = expr; RIGHT_PARENS; { expr }
 
+let lit_entry :=
+  | lit_unit
+  | lit_number
+
+let lit_unit ==
+  | LEFT_PARENS; RIGHT_PARENS; { Plit_unit }
+let lit_number ==
+  | value = NUMBER; { Plit_number { value } }
+
+let patt :=
+  | patt_wild
+  | patt_var
+  | patt_annot
+  | patt_parens
+
+let patt_wild :=
+  | WILDCARD; { Ppat_wild }
+let patt_var :=
+  | name = LOWER; { Ppat_var { name = Name.make name } }
+let patt_annot :=
+  | LEFT_PARENS; (value, annot) = annotation(patt); RIGHT_PARENS; { Ppat_annot { value; annot } }
+let patt_parens :=
+  | LEFT_PARENS; patt = patt; RIGHT_PARENS; { patt }
+
 let type_entry :=
-  | type_tuple
   | type_entry_rec
 
 let type_entry_rec :=
   | type_forall
   | type_arrow
-  | type_apply
+  | type_prod
+
+let type_prod :=
+  | ty = type_apply; { ty }
+  | ty = type_apply; STAR; types = nonempty_type_list; { Ptyp_tuple { types = ty :: types } }
+
+let nonempty_type_list :=
+  | head = type_apply; { [head] }
+  | head = nonempty_type_list; STAR; tail = type_apply; { head @ [tail] }
 
 let type_apply :=
+  | base = type_simple; { base }
   | base = type_apply; args = parens(non_empty_list(COMMA, type_apply)); { curry_type_apply base args }
-  | type_simple
 
 let type_simple :=
   | type_constructor
   | type_variable
   | type_parens
 
-(* type variable *)
 let type_variable :=
   | value = LOWER; { Ptyp_var { name = Name.make value } }
-(* type constructors / builtin *)
 let type_constructor :=
   | value = UPPER; { Ptyp_const { name = Name.make value } }
-// type tuple
-let type_tuple :=
-  | types = parens(type_list(COMMA)); { Ptyp_tuple { types } }
-(* type arrow *)
 let type_arrow :=
   | param = type_simple; ARROW; return = type_entry; { Ptyp_arrow { param; return } }
-(* forall type *)
 let type_forall :=
   | FORALL; param = brackets (name_list (COMMA)); FATARROW; return = type_entry; { Ptyp_forall { param; return } }
-(* type enclosed in parentheses *)
 let type_parens :=
   | LEFT_PARENS; value = type_entry; RIGHT_PARENS; { value } 
 
-(* list of names separated by a separator *)
 let name_list (sep) :=
   | init = LOWER; { [Name.make init] }
   | init = LOWER; sep; rest = name_list (sep); { (Name.make init) :: rest }
-(* list of names separated by a separator *)
-let type_list (sep) :=
-  | non_empty_list(sep, type_entry)
-(* non-empty list of expressions separated by a separator *)
 let non_empty_list (sep, expr) :=
-  | init = expr; { [init] }
-  | init = expr; sep; rest = non_empty_list (sep, expr); { init :: rest }
+  | head = expr; { [head] }
+  | head = non_empty_list (sep, expr); sep; tail = expr; { head @ [tail] }
 
-(* type annotation of a content *)
 let annotation (self) :=
   | value = self; COLON; annot = type_entry; { (value, annot) }
-(* parentheses around a content *)
 let parens (self) :=
   | LEFT_PARENS; expr = self; RIGHT_PARENS; { expr }
-(* braces around a content *)
 let braces (self) :=
   | LEFT_BRACES; expr = self; RIGHT_BRACES; { expr }
-(* brackets around a content *)
 let brackets (self) :=
   | LEFT_BRACKET; expr = self; RIGHT_BRACKET; { expr }

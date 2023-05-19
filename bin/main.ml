@@ -1,1 +1,1 @@
-let () = Smol.Run.run ()
+let () = Earle.Test.test ()

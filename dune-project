@@ -2,7 +2,7 @@
 
 (using menhir 2.1)
 
-(name smol)
+(name earle)
 
 (generate_opam_files true)
 
@@ -18,7 +18,7 @@
 (documentation https://url/to/documentation)
 
 (package
- (name smol)
+ (name earle)
  (synopsis "A short synopsis")
  (description "A longer description")
  (depends ocaml dune)

@@ -314,6 +314,8 @@ mut xs f index =
 (|>) : forall {a, b} => (a -> b) -> a -> b
 (|>) = lambda (f, x) => f(x)
 
+// (==) : forall { A : _ } -> A -> A -> _
+
 apply =
   x + 1
   |> ((-) 1)
@@ -323,7 +325,7 @@ apply =
 // modules, goals:
 // - recursive module definitions
 // - structure and signature inheritance (open, include)
-// - signature ascription (annotations), opaque (:>) and transparent (:)
+// - signature ascription (annotations), opaque (???syntax???) and transparent (:)
 // - functor application
 
 User : {
@@ -356,6 +358,14 @@ Eq : {
   eq : t -> t -> bool
 }
 
+Church = {
+  true : forall {a, b} -> a -> b -> a
+  true = lambda t => lambda f => t
+
+  false : forall {a, b} -> a -> a -> b
+  false = lambda t => lambda f => f
+}
+
 Int = {
   type t = Int
 
@@ -378,23 +388,81 @@ Char = {
 }
 
 Option = {
-  type Option(a) =
+  type T(a) =
     | None
     | Some(a)
 
-  map : forall {a, b} => (a -> b) -> a -> b
+  map : forall {a, b} => (a -> T(b)) -> T(a) -> T(b)
   map = lambda (f, m) =>
     case m
     | Some(x) => Some(f(x))
     | None => None
 
-  (>>=) : forall {a, b} => (a -> b) -> a -> b
+  (>>=) : forall {a, b} => (a -> T(b)) -> T(a) -> T(b)
+  (>>=) = lambda(f, m) => map(f, m)
+}
+
+Option = {
+  type Type(a) =
+    | None
+    | Some(a)
+
+  map : forall {a, b} => (a -> Type(b)) -> Type(a) -> Type(b)
+  map = lambda (f, m) =>
+    case m
+    | Some(x) => Some(f(x))
+    | None => None
+
+  (>>=) : forall {a, b} => (a -> Type(b)) -> Type(a) -> Type(b)
   (>>=) = lambda(f, m) => map(f, m)
 }
 
 // ?
 _ = Option.map (lambda (x) => x + 5) Option.None
-_ = Option.map (lambda (x) => x + 5) Option.Some (5)
+_ = Option.map (lambda (x) => x + 5) (Option.Some (5))
+
+Nat = {
+  type Peano =
+    | Zero
+    | Succ(T)
+
+  is_zero : Peano -> Bool
+  is_zero = lambda x =>
+    case x
+    | Zero => Bool.True
+    | Succ(_) => Bool.False
+
+  plus : Peano -> Peano -> Peano
+  plus = lambda (a, b) => _
+
+  minus : Peano -> Peano -> Peano
+  minus = lambda (a, b) => _
+
+  (+) : Peano -> Peano -> Peano
+  (+) = lambda (a, b) => plus(a, b)
+
+  (-) : Peano -> Peano -> Peano
+  (-) = lambda (a, b) => plus(a, b)
+}
+
+Show : {
+  show : Show -> String.Type
+} = {
+  show = lambda show => _
+}
+
+Int = {
+  type @Int = *
+}
+
+Nat = {
+  // Nat type
+  type @Nat = *
+
+  // @Nat -> @Int
+  to_int = Nat -> Int
+  to_int = lambda n => _
+}
 
 // GADT
 data Box =
@@ -404,4 +472,12 @@ data Box =
   | Box : ((a -> String) * a) -> Box
 
 show = lambda (Box(f, x)) => f(x)
+
+data Either (a, b) =
+  | Left : a
+  | Right : b
+
+data Either (a, b) =
+  | Left : a -> Either(a, b)
+  | Right : b -> Either(a, b)
 ```
